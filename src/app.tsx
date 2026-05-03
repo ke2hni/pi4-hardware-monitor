@@ -64,6 +64,7 @@ type BootState = {
     bootDevice: string;
     rootDevice: string;
     fanPresent: string;
+    bootloaderVersion: string;
 };
 
 type SdState = {
@@ -1166,6 +1167,7 @@ async function readStaticIdentityPatch(): Promise<MonitorPatch> {
       printf "PI_MODEL=%s\n" "$(cat /proc/device-tree/model 2>/dev/null | tr -d "\000")"
       printf "KERNEL=%s\n" "$(uname -r 2>/dev/null)"
       printf "VCGEN_VERSION=%s\n" "$(vcgencmd version 2>/dev/null | tr "\n" " " | sed "s/[[:space:]][[:space:]]*/ /g; s/[[:space:]]*$//")"
+      printf "BOOTLOADER_VERSION=%s\n" "$(vcgencmd bootloader_version 2>/dev/null | head -n1)"
       printf "RING_OSC=%s\n" "$(vcgencmd read_ring_osc 2>/dev/null | tr "\n" " " | sed "s/[[:space:]][[:space:]]*/ /g; s/[[:space:]]*$//")"
       printf "MEMTOTAL_KB=%s\n" "$(awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null)"
     `;
@@ -1178,6 +1180,9 @@ async function readStaticIdentityPatch(): Promise<MonitorPatch> {
             piModel: data.PI_MODEL || "--",
             kernel: data.KERNEL || "--",
             totalRam: formatBytesGiB(Number(data.MEMTOTAL_KB || 0) * 1024),
+        },
+        boot: {
+            bootloaderVersion: formatFirmwareVersion(data.BOOTLOADER_VERSION || ""),
         },
         advanced: {
             firmwareVersion: formatFirmwareVersion(data.VCGEN_VERSION || ""),
@@ -1225,6 +1230,7 @@ function defaultMonitorState(): MonitorState {
             bootDevice: "--",
             rootDevice: "--",
             fanPresent: "--",
+            bootloaderVersion: "--",
         },
         sd: {
             present: "--",
@@ -1660,7 +1666,9 @@ export const Application = () => {
         }, 0);
     }, [isHistorySampleOpen, selectedHistorySampleKey]);
 
-    const showFanCard = monitor.thermal.fanRpm !== "--" || monitor.thermal.fanPwm !== "--";
+    const showFanCard =
+        !["--", "0"].includes(monitor.thermal.fanRpm) ||
+        !["--", "0%"].includes(monitor.thermal.fanPwm);
     const showUsbStorageSection = monitor.usbStorage.present === "Yes";
     const selectedHistoryDay = historyDays.find(day => day.dayKey === selectedHistoryDayKey) || null;
     const selectedDaySamples = historySamples.filter(sample => sample.dayKey === selectedHistoryDayKey);
@@ -2244,6 +2252,12 @@ export const Application = () => {
                                         <CardBody>
                                             <Title headingLevel="h4" size="md" className="pi-card-label">Fan Present</Title>
                                             <Title headingLevel="h3">{monitor.boot.fanPresent}</Title>
+                                        </CardBody>
+                                    </Card>
+                                    <Card isCompact>
+                                        <CardBody>
+                                            <Title headingLevel="h4" size="md" className="pi-card-label">Bootloader Version</Title>
+                                            <Title headingLevel="h3">{monitor.boot.bootloaderVersion}</Title>
                                         </CardBody>
                                     </Card>
                                 </Gallery>
