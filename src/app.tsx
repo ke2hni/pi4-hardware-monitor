@@ -435,6 +435,36 @@ function decodeSdVendor(raw: string) {
     return vendors[v] || raw || "--";
 }
 
+function formatFirmwareVersion(raw: string) {
+    if (!raw || raw === "--") return "--";
+
+    const match = raw.match(/^([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})\s+(\d{2}:\d{2}:\d{2})/);
+
+    if (!match) return raw;
+
+    const months: Record<string, string> = {
+        Jan: "01",
+        Feb: "02",
+        Mar: "03",
+        Apr: "04",
+        May: "05",
+        Jun: "06",
+        Jul: "07",
+        Aug: "08",
+        Sep: "09",
+        Oct: "10",
+        Nov: "11",
+        Dec: "12",
+    };
+
+    const month = months[match[1]] || "--";
+    const day = match[2].padStart(2, "0");
+
+    if (month === "--") return raw;
+
+    return `${match[3]}/${month}/${day} ${match[4]}`;
+}
+
 function formatRingOsc(raw: string) {
     if (!raw || raw === "--") return "--";
 
@@ -1150,7 +1180,7 @@ async function readStaticIdentityPatch(): Promise<MonitorPatch> {
             totalRam: formatBytesGiB(Number(data.MEMTOTAL_KB || 0) * 1024),
         },
         advanced: {
-            firmwareVersion: data.VCGEN_VERSION || "--",
+            firmwareVersion: formatFirmwareVersion(data.VCGEN_VERSION || ""),
             ringOscillator: formatRingOsc(data.RING_OSC || ""),
         },
     };
