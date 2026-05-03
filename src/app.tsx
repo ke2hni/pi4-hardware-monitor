@@ -1132,12 +1132,12 @@ async function readStoragePatch(): Promise<MonitorPatch> {
 }
 
 async function readStaticIdentityPatch(): Promise<MonitorPatch> {
-    const cmd = `
-      echo "PI_MODEL=$(tr -d '\0' </proc/device-tree/model 2>/dev/null)"
-      echo "KERNEL=$(uname -r 2>/dev/null)"
-      echo "VCGEN_VERSION=$(vcgencmd version 2>/dev/null | head -n1)"
-      echo "RING_OSC=$(vcgencmd read_ring_osc 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]][[:space:]]*/ /g' | sed 's/[[:space:]]*$//')"
-      echo "MEMTOTAL_KB=$(awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null)"
+    const cmd = String.raw`
+      printf "PI_MODEL=%s\n" "$(cat /proc/device-tree/model 2>/dev/null | tr -d "\000")"
+      printf "KERNEL=%s\n" "$(uname -r 2>/dev/null)"
+      printf "VCGEN_VERSION=%s\n" "$(vcgencmd version 2>/dev/null | tr "\n" " " | sed "s/[[:space:]][[:space:]]*/ /g; s/[[:space:]]*$//")"
+      printf "RING_OSC=%s\n" "$(vcgencmd read_ring_osc 2>/dev/null | tr "\n" " " | sed "s/[[:space:]][[:space:]]*/ /g; s/[[:space:]]*$//")"
+      printf "MEMTOTAL_KB=%s\n" "$(awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null)"
     `;
 
     const out = await cockpit.spawn(["sh", "-c", cmd], { err: "out" });
