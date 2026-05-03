@@ -14,7 +14,7 @@ Cockpit plugin for monitoring Raspberry Pi 4 hardware, power, clocks, storage, a
 ```bash
 sudo apt update
 sudo apt install -y git
-git clone https://github.com/ke2hni/p4-hardware-monitor.git
+git clone https://github.com/ke2hni/pi4-hardware-monitor.git
 cd p4-hardware-monitor
 sudo ./install.sh
 ```
@@ -24,7 +24,7 @@ sudo ./install.sh
 ## 🔄 Upgrade
 
 ```bash
-cd ~/p4-hardware-monitor
+cd ~/pi4-hardware-monitor
 git pull
 sudo ./install.sh
 ```
