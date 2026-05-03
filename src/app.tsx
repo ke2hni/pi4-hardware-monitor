@@ -876,8 +876,7 @@ async function readThermalPatch(): Promise<MonitorPatch> {
         echo "CPU=$(cat "$CPU_HWMON/temp1_input" 2>/dev/null)"
       fi
 
-      PMIC_TEMP=$(vcgencmd measure_temp pmic 2>/dev/null | cut -d= -f2 | tr -d "'C" | awk '{printf "%d", $1 * 1000}' || true)
-      [ -n "$PMIC_TEMP" ] && printf "PMIC_TEMP=%s\n" "$PMIC_TEMP"
+      echo "PMIC_TEMP=$(vcgencmd measure_temp pmic 2>/dev/null | sed "s/.*=//; s/'C//" | awk '{printf "%d", $1 * 1000}')"
 
       FAN_VALUE=""
       PWM_VALUE=""
@@ -887,11 +886,14 @@ async function readThermalPatch(): Promise<MonitorPatch> {
       for HWMON_DIR in /sys/class/hwmon/hwmon*; do
         [ -d "$HWMON_DIR" ] || continue
 
-        if [ "$FAN_FOUND" -eq 1 ] || [ "$PWM_FOUND" -eq 1 ]; then
-  echo "FAN_PRESENT=1"
-else
-  echo "FAN_PRESENT=0"
-fi
+        if [ "$FAN_FOUND" -eq 0 ]; then
+          for FAN_PATH in "$HWMON_DIR"/fan*_input; do
+            [ -r "$FAN_PATH" ] || continue
+            FAN_VALUE=$(cat "$FAN_PATH" 2>/dev/null || true)
+            if [ -n "$FAN_VALUE" ]; then
+              FAN_FOUND=1
+              break
+            fi
           done
         fi
 
