@@ -1692,7 +1692,7 @@ export const Application = () => {
                             <FlexItem flex={{ default: "flex_1" }}>
                                 <Title headingLevel="h1">Raspberry Pi 4 Hardware Monitor</Title>
                                 <Content component={ContentVariants.p}>
-                                    Ver. 1.0 - April 23, 2026
+                                    Ver. 2.0 - May 3, 2026
                                 </Content>
                             </FlexItem>
 
