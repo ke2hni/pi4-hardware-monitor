@@ -133,4 +133,3 @@ main() {
 
 trap 'fail "Installer aborted unexpectedly"' ERR
 main "$@"
-```
