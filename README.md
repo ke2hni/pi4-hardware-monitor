@@ -34,7 +34,8 @@ sudo ./install.sh
 ## 🗑️ Uninstall
 
 ```bash
-sudo rm -rf /usr/local/share/cockpit/pi-monitor
+cd ~/pi4-hardware-monitor
+sudo ./uninstall.sh
 ```
 
 ---
