@@ -863,8 +863,21 @@ function parseKeyValueOutput(out: string) {
 
 async function readThermalPatch(): Promise<MonitorPatch> {
     const cmd = `
-      CPU_RAW=""
-      PMIC_RAW=""
+      CPU_HWMON=$(for HWMON_DIR in /sys/class/hwmon/hwmon*; do
+        [ -r "$HWMON_DIR/name" ] || continue
+        HWMON_NAME=$(cat "$HWMON_DIR/name" 2>/dev/null || true)
+        if [ "$HWMON_NAME" = "cpu_thermal" ]; then
+          echo "$HWMON_DIR"
+          break
+        fi
+      done)
+
+      if [ -n "$CPU_HWMON" ] && [ -r "$CPU_HWMON/temp1_input" ]; then
+        echo "CPU=$(cat "$CPU_HWMON/temp1_input" 2>/dev/null)"
+      fi
+
+      echo "PMIC_TEMP=$(vcgencmd measure_temp pmic 2>/dev/null | sed "s/.*=//; s/'C//" | awk '{printf "%d", $1 * 1000}')"
+
       FAN_VALUE=""
       PWM_VALUE=""
       FAN_FOUND=0
@@ -872,11 +885,6 @@ async function readThermalPatch(): Promise<MonitorPatch> {
 
       for HWMON_DIR in /sys/class/hwmon/hwmon*; do
         [ -d "$HWMON_DIR" ] || continue
-        HWMON_NAME=$(cat "$HWMON_DIR/name" 2>/dev/null || true)
-
-        if [ -z "$CPU_RAW" ] && [ "$HWMON_NAME" = "cpu_thermal" ] && [ -r "$HWMON_DIR/temp1_input" ]; then
-          CPU_RAW=$(cat "$HWMON_DIR/temp1_input" 2>/dev/null || true)
-        fi
 
         if [ "$FAN_FOUND" -eq 0 ]; then
           for FAN_PATH in "$HWMON_DIR"/fan*_input; do
@@ -902,24 +910,15 @@ async function readThermalPatch(): Promise<MonitorPatch> {
             fi
           done
         fi
+
+        if [ "$FAN_FOUND" -eq 1 ] && [ "$PWM_FOUND" -eq 1 ]; then
+          break
+        fi
       done
 
-      if [ -z "$CPU_RAW" ]; then
-        CPU_RAW=$(vcgencmd measure_temp 2>/dev/null | sed "s/.*=//; s/'C//" | awk '{printf "%d", $1 * 1000}' || true)
-      fi
-
-      PMIC_RAW=$(vcgencmd measure_temp pmic 2>/dev/null | sed "s/.*=//; s/'C//" | awk '{printf "%d", $1 * 1000}' || true)
-
-      [ -n "$CPU_RAW" ] && echo "CPU=$CPU_RAW"
-      [ -n "$PMIC_RAW" ] && echo "PMIC_TEMP=$PMIC_RAW"
       [ "$FAN_FOUND" -eq 1 ] && echo "FAN=$FAN_VALUE"
       [ "$PWM_FOUND" -eq 1 ] && echo "PWM=$PWM_VALUE"
-      if [ "$FAN_FOUND" -eq 1 ] || [ "$PWM_FOUND" -eq 1 ]; then
-        echo "FAN_PRESENT=1"
-      else
-        echo "FAN_PRESENT=0"
-      fi
-      true
+      { [ "$FAN_FOUND" -eq 1 ] || [ "$PWM_FOUND" -eq 1 ]; } && echo "FAN_PRESENT=1"
     `;
 
     const out = await cockpit.spawn(["sh", "-c", cmd], { err: "out" });
@@ -964,22 +963,21 @@ async function readPowerVoltagePatch(): Promise<MonitorPatch> {
 
 async function readSystemActivityPatch(): Promise<MonitorPatch> {
     const cmd = `
-      ROOT_DF_LINE=$(df -B1 / 2>/dev/null | awk 'NR==2 {print $3 "|" $2 "|" $5}' || true)
+      ROOT_DF_LINE=$(df -B1 / 2>/dev/null | awk 'NR==2 {print $3 "|" $2 "|" $5}')
       if [ -n "$ROOT_DF_LINE" ]; then
         echo "ROOTFS_USED_BYTES=$(printf '%s\n' "$ROOT_DF_LINE" | cut -d'|' -f1)"
         echo "ROOTFS_TOTAL_BYTES=$(printf '%s\n' "$ROOT_DF_LINE" | cut -d'|' -f2)"
         echo "ROOTFS_USED_PCT=$(printf '%s\n' "$ROOT_DF_LINE" | cut -d'|' -f3)"
       fi
 
-      echo "UPTIME=$(cut -d. -f1 /proc/uptime 2>/dev/null || true)"
-      echo "LOAD_AVG=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || true)"
-      echo "MEMTOTAL_KB=$(awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || true)"
-      echo "MEMAVAILABLE_KB=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || true)"
-      echo "CPU_FREQ_KHZ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null || true)"
-      echo "CLOCK_ARM=$(vcgencmd measure_clock arm 2>/dev/null | awk -F= '{print $2}' || true)"
-      echo "CLOCK_CORE=$(vcgencmd measure_clock core 2>/dev/null | awk -F= '{print $2}' || true)"
-      echo "CLOCK_EMMC=$(vcgencmd measure_clock emmc 2>/dev/null | awk -F= '{print $2}' || true)"
-      true
+      echo "UPTIME=$(cut -d. -f1 /proc/uptime 2>/dev/null)"
+      echo "LOAD_AVG=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)"
+      echo "MEMTOTAL_KB=$(awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null)"
+      echo "MEMAVAILABLE_KB=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null)"
+      echo "CPU_FREQ_KHZ=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null)"
+      echo "CLOCK_ARM=$(vcgencmd measure_clock arm 2>/dev/null | awk -F= '{print $2}')"
+      echo "CLOCK_CORE=$(vcgencmd measure_clock core 2>/dev/null | awk -F= '{print $2}')"
+      echo "CLOCK_EMMC=$(vcgencmd measure_clock emmc 2>/dev/null | awk -F= '{print $2}')"
     `;
 
     const out = await cockpit.spawn(["sh", "-c", cmd], { err: "out" });
@@ -1009,7 +1007,7 @@ async function readSystemActivityPatch(): Promise<MonitorPatch> {
 
 async function readStoragePatch(): Promise<MonitorPatch> {
     const cmd = `
-      ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null || true)
+      ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null)
       echo "ROOT_DEVICE=$ROOT_DEV"
 
       USB_STORAGE_DISK=""
@@ -1017,17 +1015,18 @@ async function readStoragePatch(): Promise<MonitorPatch> {
 
       case "$ROOT_DEV" in
         /dev/sd[a-z][0-9]*)
-          USB_ROOT_DISK=$(printf '%s\n' "$ROOT_DEV" | sed -E 's#^/dev/(sd[a-z]+)[0-9]+$#\\1#')
+          USB_ROOT_DISK=$(printf '%s\\n' "$ROOT_DEV" | sed -E 's#^/dev/(sd[a-z]+)[0-9]+$#\\1#')
           ;;
         /dev/sd[a-z])
-          USB_ROOT_DISK=$(printf '%s\n' "$ROOT_DEV" | sed -E 's#^/dev/(sd[a-z]+)$#\\1#')
+          USB_ROOT_DISK=$(printf '%s\\n' "$ROOT_DEV" | sed -E 's#^/dev/(sd[a-z]+)$#\\1#')
           ;;
       esac
 
       is_usb_storage_disk() {
         DISK_NAME="$1"
         DISK_DEVICE_PATH=$(readlink -f "/sys/class/block/$DISK_NAME/device" 2>/dev/null || true)
-        printf '%s\n' "$DISK_DEVICE_PATH" | grep -q '/usb'
+        printf '%s
+' "$DISK_DEVICE_PATH" | grep -q '/usb'
       }
 
       if [ -n "$USB_ROOT_DISK" ] && is_usb_storage_disk "$USB_ROOT_DISK"; then
@@ -1048,37 +1047,37 @@ async function readStoragePatch(): Promise<MonitorPatch> {
         echo "USB_STORAGE_DEVICE=/dev/$USB_STORAGE_DISK"
 
         if [ -r "/sys/class/block/$USB_STORAGE_DISK/device/model" ]; then
-          USB_STORAGE_MODEL=$(cat "/sys/class/block/$USB_STORAGE_DISK/device/model" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)
+          USB_STORAGE_MODEL=$(cat "/sys/class/block/$USB_STORAGE_DISK/device/model" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         fi
         [ -n "$USB_STORAGE_MODEL" ] && echo "USB_STORAGE_MODEL=$USB_STORAGE_MODEL"
 
         if [ -r "/sys/class/block/$USB_STORAGE_DISK/size" ]; then
-          USB_STORAGE_SIZE_BYTES=$(awk '{print $1 * 512}' "/sys/class/block/$USB_STORAGE_DISK/size" 2>/dev/null || true)
+          USB_STORAGE_SIZE_BYTES=$(awk '{print $1 * 512}' "/sys/class/block/$USB_STORAGE_DISK/size" 2>/dev/null)
         fi
         [ -n "$USB_STORAGE_SIZE_BYTES" ] && echo "USB_STORAGE_SIZE_BYTES=$USB_STORAGE_SIZE_BYTES"
 
-        USB_MOUNT_LINE=$(lsblk -nrpo NAME,MOUNTPOINT "/dev/$USB_STORAGE_DISK" 2>/dev/null | awk '$2 != "" {print $1 "|" $2; exit}' || true)
+        USB_MOUNT_LINE=$(lsblk -nrpo NAME,MOUNTPOINT "/dev/$USB_STORAGE_DISK" 2>/dev/null | awk '$2 != "" {print $1 "|" $2; exit}')
         if [ -n "$USB_MOUNT_LINE" ]; then
-          USB_STORAGE_MOUNT_DEVICE=$(printf '%s\n' "$USB_MOUNT_LINE" | cut -d'|' -f1)
-          USB_STORAGE_MOUNT_POINT=$(printf '%s\n' "$USB_MOUNT_LINE" | cut -d'|' -f2-)
+          USB_STORAGE_MOUNT_DEVICE=$(printf '%s
+' "$USB_MOUNT_LINE" | cut -d'|' -f1)
+          USB_STORAGE_MOUNT_POINT=$(printf '%s
+' "$USB_MOUNT_LINE" | cut -d'|' -f2-)
           [ -n "$USB_STORAGE_MOUNT_DEVICE" ] && echo "USB_STORAGE_MOUNT_DEVICE=$USB_STORAGE_MOUNT_DEVICE"
           [ -n "$USB_STORAGE_MOUNT_POINT" ] && echo "USB_STORAGE_MOUNT_POINT=$USB_STORAGE_MOUNT_POINT"
           if [ -n "$USB_STORAGE_MOUNT_POINT" ]; then
-            USB_STORAGE_FREE_BYTES=$(df -B1 "$USB_STORAGE_MOUNT_POINT" 2>/dev/null | awk 'NR==2 {print $4}' || true)
+            USB_STORAGE_FREE_BYTES=$(df -B1 "$USB_STORAGE_MOUNT_POINT" 2>/dev/null | awk 'NR==2 {print $4}')
             [ -n "$USB_STORAGE_FREE_BYTES" ] && echo "USB_STORAGE_FREE_BYTES=$USB_STORAGE_FREE_BYTES"
           fi
         fi
-      else
-        echo "USB_STORAGE_PRESENT=0"
       fi
 
       if [ -b /dev/mmcblk0 ]; then
         echo "SD_PRESENT=1"
         echo "SD_DEVICE=/dev/mmcblk0"
-        [ -r /sys/class/block/mmcblk0/size ] && echo "SD_SIZE_BYTES=$(awk '{print $1 * 512}' /sys/class/block/mmcblk0/size 2>/dev/null || true)"
-        [ -r /sys/class/block/mmcblk0/device/manfid ] && echo "SD_VENDOR=$(cat /sys/class/block/mmcblk0/device/manfid 2>/dev/null || true)"
-        [ -r /sys/class/block/mmcblk0/device/name ] && echo "SD_NAME=$(cat /sys/class/block/mmcblk0/device/name 2>/dev/null || true)"
-        [ -r /sys/class/block/mmcblk0/device/serial ] && echo "SD_SERIAL=$(cat /sys/class/block/mmcblk0/device/serial 2>/dev/null || true)"
+        [ -r /sys/class/block/mmcblk0/size ] && echo "SD_SIZE_BYTES=$(awk '{print $1 * 512}' /sys/class/block/mmcblk0/size 2>/dev/null)"
+        [ -r /sys/class/block/mmcblk0/device/manfid ] && echo "SD_VENDOR=$(cat /sys/class/block/mmcblk0/device/manfid 2>/dev/null)"
+        [ -r /sys/class/block/mmcblk0/device/name ] && echo "SD_NAME=$(cat /sys/class/block/mmcblk0/device/name 2>/dev/null)"
+        [ -r /sys/class/block/mmcblk0/device/serial ] && echo "SD_SERIAL=$(cat /sys/class/block/mmcblk0/device/serial 2>/dev/null)"
 
         SD_MOUNT_DEV=$(findmnt -rn -o SOURCE | grep -E '^/dev/mmcblk0p[0-9]+$' | head -n1 || true)
         if [ -n "$SD_MOUNT_DEV" ]; then
@@ -1087,18 +1086,18 @@ async function readStoragePatch(): Promise<MonitorPatch> {
             echo "SD_MOUNT_DEVICE=$SD_MOUNT_DEV"
             echo "SD_MOUNT_POINT=$SD_MOUNT_POINT"
 
-            SD_DF_LINE=$(df -B1 "$SD_MOUNT_POINT" 2>/dev/null | awk 'NR==2 {print $3 "|" $2 "|" $5}' || true)
+            SD_DF_LINE=$(df -B1 "$SD_MOUNT_POINT" 2>/dev/null | awk 'NR==2 {print $3 "|" $2 "|" $5}')
             if [ -n "$SD_DF_LINE" ]; then
-              echo "SD_USED_BYTES=$(printf '%s\n' "$SD_DF_LINE" | cut -d'|' -f1)"
-              echo "SD_TOTAL_BYTES=$(printf '%s\n' "$SD_DF_LINE" | cut -d'|' -f2)"
-              echo "SD_USED_PCT=$(printf '%s\n' "$SD_DF_LINE" | cut -d'|' -f3)"
+              echo "SD_USED_BYTES=$(printf '%s
+' "$SD_DF_LINE" | cut -d'|' -f1)"
+              echo "SD_TOTAL_BYTES=$(printf '%s
+' "$SD_DF_LINE" | cut -d'|' -f2)"
+              echo "SD_USED_PCT=$(printf '%s
+' "$SD_DF_LINE" | cut -d'|' -f3)"
             fi
           fi
         fi
-      else
-        echo "SD_PRESENT=0"
       fi
-      true
     `;
 
     const out = await cockpit.spawn(["sh", "-c", cmd], { err: "out" });
@@ -1134,18 +1133,11 @@ async function readStoragePatch(): Promise<MonitorPatch> {
 
 async function readStaticIdentityPatch(): Promise<MonitorPatch> {
     const cmd = `
-      PI_MODEL=$(cat /proc/device-tree/model 2>/dev/null | strings | head -n1 || true)
-      KERNEL_VALUE=$(uname -r 2>/dev/null || true)
-      VCGEN_VERSION=$(vcgencmd version 2>/dev/null | head -n1 || true)
-      RING_OSC=$(vcgencmd read_ring_osc 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]][[:space:]]*/ /g' | sed 's/[[:space:]]*$//' || true)
-      MEMTOTAL_KB=$(awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || true)
-
-      echo "PI_MODEL=$PI_MODEL"
-      echo "KERNEL=$KERNEL_VALUE"
-      echo "VCGEN_VERSION=$VCGEN_VERSION"
-      echo "RING_OSC=$RING_OSC"
-      echo "MEMTOTAL_KB=$MEMTOTAL_KB"
-      true
+      echo "PI_MODEL=$(tr -d '\0' </proc/device-tree/model 2>/dev/null)"
+      echo "KERNEL=$(uname -r 2>/dev/null)"
+      echo "VCGEN_VERSION=$(vcgencmd version 2>/dev/null | head -n1)"
+      echo "RING_OSC=$(vcgencmd read_ring_osc 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]][[:space:]]*/ /g' | sed 's/[[:space:]]*$//')"
+      echo "MEMTOTAL_KB=$(awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null)"
     `;
 
     const out = await cockpit.spawn(["sh", "-c", cmd], { err: "out" });
@@ -1161,6 +1153,83 @@ async function readStaticIdentityPatch(): Promise<MonitorPatch> {
             firmwareVersion: data.VCGEN_VERSION || "--",
             ringOscillator: formatRingOsc(data.RING_OSC || ""),
         },
+    };
+}
+
+/*
+ * Live monitor defaults and live-data reader.
+ * These provide safe placeholder values until the node responds.
+ */
+function defaultMonitorState(): MonitorState {
+    return {
+        thermal: {
+            cpuTemp: "--",
+            pmicTemp: "--",
+            fanRpm: "--",
+            fanPwm: "--",
+        },
+        power: {
+            raw: "throttled=0x0",
+            rawText: "No power or thermal issues",
+            powerHealth: "--",
+            currentUndervoltage: "--",
+            undervoltageSinceBoot: "--",
+            currentThrottled: "--",
+            throttledSinceBoot: "--",
+            currentFreqCap: "--",
+            freqCapSinceBoot: "--",
+            currentSoftTempLimit: "--",
+            softTempLimitSinceBoot: "--",
+        },
+        system: {
+            piModel: "--",
+            cpuFrequency: "--",
+            totalRam: "--",
+            memoryUsage: "--",
+            uptime: "--",
+            kernel: "--",
+            loadAverage: "--",
+            rootFilesystemUsed: "--",
+        },
+        boot: {
+            bootDevice: "--",
+            rootDevice: "--",
+            fanPresent: "--",
+        },
+        sd: {
+            present: "--",
+            device: "--",
+            capacity: "--",
+            cardUsed: "--",
+            vendor: "--",
+            name: "--",
+            serial: "--",
+            mountedAt: "--",
+        },
+        usbStorage: {
+            present: "--",
+            model: "--",
+            capacity: "--",
+            freeSpace: "--",
+            devicePath: "--",
+            mountedAt: "--",
+        },
+        voltages: {
+            coreVoltage: "--",
+            sdramC: "--",
+            sdramI: "--",
+            sdramP: "--",
+        },
+        clocks: {
+            armClock: "--",
+            coreClock: "--",
+            emmcClock: "--",
+        },
+        advanced: {
+            firmwareVersion: "--",
+            ringOscillator: "--",
+        },
+        history: defaultHistorySummaryState(),
     };
 }
 
