@@ -887,14 +887,11 @@ async function readThermalPatch(): Promise<MonitorPatch> {
       for HWMON_DIR in /sys/class/hwmon/hwmon*; do
         [ -d "$HWMON_DIR" ] || continue
 
-        if [ "$FAN_FOUND" -eq 0 ]; then
-          for FAN_PATH in "$HWMON_DIR"/fan*_input; do
-            [ -r "$FAN_PATH" ] || continue
-            FAN_VALUE=$(cat "$FAN_PATH" 2>/dev/null || true)
-            if [ -n "$FAN_VALUE" ]; then
-              FAN_FOUND=1
-              break
-            fi
+        if [ "$FAN_FOUND" -eq 1 ] || [ "$PWM_FOUND" -eq 1 ]; then
+  echo "FAN_PRESENT=1"
+else
+  echo "FAN_PRESENT=0"
+fi
           done
         fi
 
