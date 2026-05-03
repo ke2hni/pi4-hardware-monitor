@@ -1,6 +1,6 @@
 ```bash
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -eo pipefail
 
 echo "Pi 4 Hardware Monitor Installer"
 
