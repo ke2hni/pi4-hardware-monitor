@@ -6,6 +6,7 @@ set -Eeuo pipefail
 
 SCRIPT_NAME=$(basename "$0")
 SCRIPT_PATH=$(readlink -f -- "${BASH_SOURCE[0]}")
+PROJECT_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 DEFAULT_PLUGIN_ID="pi-monitor"
 DEFAULT_INSTALL_ROOT="/usr/local/share/cockpit"
 DEFAULT_HISTORY_DIR="/var/lib/pi-monitor"
@@ -85,6 +86,7 @@ require_root() {
 
 print_startup_context() {
   log "Uninstaller path: $SCRIPT_PATH"
+  log "Project root: $PROJECT_ROOT"
   log "Interactive mode: $INTERACTIVE"
   if [[ -n "$REAL_USER" ]]; then
     log "Detected non-root user: $REAL_USER"
@@ -211,6 +213,42 @@ remove_history_data() {
   fi
 }
 
+remove_repo_build_artifacts() {
+  local path
+  local -a repo_artifacts=(
+    "$PROJECT_ROOT/dist"
+    "$PROJECT_ROOT/node_modules"
+    "$PROJECT_ROOT/package-lock.json"
+  )
+
+  local found=0
+  for path in "${repo_artifacts[@]}"; do
+    if [[ -e "$path" || -L "$path" ]]; then
+      found=1
+      break
+    fi
+  done
+
+  if [[ "$found" -ne 1 ]]; then
+    add_summary_unique SUMMARY_SKIPPED "Local repo build artifacts not present"
+    return 0
+  fi
+
+  if ask_yes_no "Remove local repo build artifacts in $PROJECT_ROOT (dist, node_modules, package-lock.json)? This enables a clean rebuild. [y/N]" "N"; then
+    for path in "${repo_artifacts[@]}"; do
+      if [[ -e "$path" || -L "$path" ]]; then
+        rm -rf -- "$path"
+        add_summary_unique SUMMARY_REMOVED "$path"
+      else
+        add_summary_unique SUMMARY_SKIPPED "$path not present"
+      fi
+    done
+  else
+    add_summary_unique SUMMARY_SKIPPED "Local repo build artifacts kept by user choice"
+    add_summary_unique SUMMARY_ACTIONS "For a fully clean rebuild later, remove: $PROJECT_ROOT/dist $PROJECT_ROOT/node_modules $PROJECT_ROOT/package-lock.json"
+  fi
+}
+
 refresh_cockpit() {
   if command -v cockpit-bridge >/dev/null 2>&1; then
     local packages_output=""
@@ -266,6 +304,7 @@ main() {
   remove_history_files
   remove_plugin_dirs
   remove_history_data
+  remove_repo_build_artifacts
   refresh_cockpit
   print_summary
 }
