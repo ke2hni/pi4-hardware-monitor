@@ -863,20 +863,11 @@ function parseKeyValueOutput(out: string) {
 
 async function readThermalPatch(): Promise<MonitorPatch> {
     const cmd = `
-      CPU_HWMON=$(for HWMON_DIR in /sys/class/hwmon/hwmon*; do
-        [ -r "$HWMON_DIR/name" ] || continue
-        HWMON_NAME=$(cat "$HWMON_DIR/name" 2>/dev/null || true)
-        if [ "$HWMON_NAME" = "cpu_thermal" ]; then
-          echo "$HWMON_DIR"
-          break
-        fi
-      done)
+      CPU_RAW=$(cat /sys/class/hwmon/hwmon0/temp1_input 2>/dev/null || true)
+      [ -n "$CPU_RAW" ] && echo "CPU=$CPU_RAW"
 
-      if [ -n "$CPU_HWMON" ] && [ -r "$CPU_HWMON/temp1_input" ]; then
-        echo "CPU=$(cat "$CPU_HWMON/temp1_input" 2>/dev/null)"
-      fi
-
-      echo "PMIC_TEMP=$(vcgencmd measure_temp pmic 2>/dev/null | sed "s/.*=//; s/'C//" | awk '{printf "%d", $1 * 1000}')"
+      PMIC_RAW=$(vcgencmd measure_temp pmic 2>/dev/null | sed "s/.*=//; s/'C//" | awk '{printf "%d", $1 * 1000}' || true)
+      [ -n "$PMIC_RAW" ] && echo "PMIC_TEMP=$PMIC_RAW"
 
       FAN_VALUE=""
       PWM_VALUE=""
