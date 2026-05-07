@@ -909,6 +909,7 @@ async function readThermalPatch(): Promise<MonitorPatch> {
 
       echo "PMIC_TEMP=$(vcgencmd measure_temp pmic 2>/dev/null | sed "s/.*=//; s/'C//" | awk '{printf "%d", $1 * 1000}')"
 
+      # Fan/PWM probing is optional and must never break CPU/PMIC live telemetry
       FAN_VALUE=""
       PWM_VALUE=""
       FAN_FOUND=0
@@ -919,6 +920,7 @@ async function readThermalPatch(): Promise<MonitorPatch> {
 
         if [ "$FAN_FOUND" -eq 0 ]; then
           for FAN_PATH in "$HWMON_DIR"/fan*_input; do
+            [ -e "$FAN_PATH" ] || continue
             [ -r "$FAN_PATH" ] || continue
             FAN_VALUE=$(cat "$FAN_PATH" 2>/dev/null || true)
             if [ -n "$FAN_VALUE" ]; then
@@ -930,6 +932,7 @@ async function readThermalPatch(): Promise<MonitorPatch> {
 
         if [ "$PWM_FOUND" -eq 0 ]; then
           for PWM_PATH in "$HWMON_DIR"/pwm[0-9]*; do
+            [ -e "$PWM_PATH" ] || continue
             [ -r "$PWM_PATH" ] || continue
             case "$PWM_PATH" in
               *_enable) continue ;;
@@ -1692,7 +1695,7 @@ export const Application = () => {
                             <FlexItem flex={{ default: "flex_1" }}>
                                 <Title headingLevel="h1">Raspberry Pi 4 Hardware Monitor</Title>
                                 <Content component={ContentVariants.p}>
-                                    Ver. 2.0 - May 3, 2026
+                                    Ver. 2.1 - May 7, 2026
                                 </Content>
                             </FlexItem>
 
