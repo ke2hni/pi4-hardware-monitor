@@ -892,6 +892,10 @@ function parseKeyValueOutput(out: string) {
     return data;
 }
 
+function hasLiveThermalData(patch: MonitorPatch) {
+    return patch.thermal?.cpuTemp !== "--" || patch.thermal?.pmicTemp !== "--";
+}
+
 async function readThermalPatch(): Promise<MonitorPatch> {
     const cmd = `
       CPU_HWMON=$(for HWMON_DIR in /sys/class/hwmon/hwmon*; do
@@ -907,9 +911,27 @@ async function readThermalPatch(): Promise<MonitorPatch> {
         echo "CPU=$(cat "$CPU_HWMON/temp1_input" 2>/dev/null)"
       fi
 
-      echo "PMIC_TEMP=$(vcgencmd measure_temp pmic 2>/dev/null | sed "s/.*=//; s/'C//" | awk '{printf "%d", $1 * 1000}')"
+      PMIC_RAW=$(vcgencmd measure_temp pmic 2>/dev/null || true)
+      if [ -n "$PMIC_RAW" ]; then
+        echo "PMIC_TEMP=$(printf '%s\n' "$PMIC_RAW" | sed "s/.*=//; s/'C//" | awk '{printf "%d", $1 * 1000}')"
+      fi
 
-      # Fan/PWM probing is optional and must never break CPU/PMIC live telemetry
+      true
+    `;
+
+    const out = await cockpit.spawn(["sh", "-c", cmd], { err: "out" });
+    const data = parseKeyValueOutput(out);
+
+    return {
+        thermal: {
+            cpuTemp: formatTemp(data.CPU || ""),
+            pmicTemp: data.PMIC_TEMP ? formatTemp(data.PMIC_TEMP) : "--",
+        },
+    };
+}
+
+async function readFanPatch(): Promise<MonitorPatch> {
+    const cmd = `
       FAN_VALUE=""
       PWM_VALUE=""
       FAN_FOUND=0
@@ -953,22 +975,34 @@ async function readThermalPatch(): Promise<MonitorPatch> {
       [ "$FAN_FOUND" -eq 1 ] && echo "FAN=$FAN_VALUE"
       [ "$PWM_FOUND" -eq 1 ] && echo "PWM=$PWM_VALUE"
       { [ "$FAN_FOUND" -eq 1 ] || [ "$PWM_FOUND" -eq 1 ]; } && echo "FAN_PRESENT=1"
+
+      true
     `;
 
-    const out = await cockpit.spawn(["sh", "-c", cmd], { err: "out" });
-    const data = parseKeyValueOutput(out);
+    try {
+        const out = await cockpit.spawn(["sh", "-c", cmd], { err: "out" });
+        const data = parseKeyValueOutput(out);
 
-    return {
-        thermal: {
-            cpuTemp: formatTemp(data.CPU || ""),
-            pmicTemp: data.PMIC_TEMP ? formatTemp(data.PMIC_TEMP) : "--",
-            fanRpm: data.FAN ? formatRpm(data.FAN) : "--",
-            fanPwm: data.PWM ? formatPercentFromPwm(data.PWM) : "--",
-        },
-        boot: {
-            fanPresent: formatYesNoFromZeroOne(data.FAN_PRESENT || "0"),
-        },
-    };
+        return {
+            thermal: {
+                fanRpm: data.FAN ? formatRpm(data.FAN) : "--",
+                fanPwm: data.PWM ? formatPercentFromPwm(data.PWM) : "--",
+            },
+            boot: {
+                fanPresent: formatYesNoFromZeroOne(data.FAN_PRESENT || "0"),
+            },
+        };
+    } catch {
+        return {
+            thermal: {
+                fanRpm: "--",
+                fanPwm: "--",
+            },
+            boot: {
+                fanPresent: "No",
+            },
+        };
+    }
 }
 
 async function readPowerVoltagePatch(): Promise<MonitorPatch> {
@@ -1276,6 +1310,7 @@ async function readMonitorData(): Promise<MonitorState> {
     const state = defaultMonitorState();
     const patches = await Promise.all([
         readThermalPatch(),
+        readFanPatch(),
         readPowerVoltagePatch(),
         readSystemActivityPatch(),
         readStoragePatch(),
@@ -1329,7 +1364,7 @@ export const Application = () => {
                     ...data,
                     history: prev.history,
                 }));
-                setLiveDataOnline(true);
+                setLiveDataOnline(hasLiveThermalData({ thermal: data.thermal }));
             } catch {
                 if (!cancelled) {
                     setLiveDataOnline(false);
@@ -1345,7 +1380,7 @@ export const Application = () => {
     }, []);
 
     /*
-     * Fast live thermal loop for temperatures and fan telemetry.
+     * Fast live thermal loop for CPU and PMIC temperatures only.
      */
     useEffect(() => {
         let cancelled = false;
@@ -1381,7 +1416,11 @@ export const Application = () => {
                 if (cancelled) return;
 
                 setMonitor(prev => mergeMonitorState(prev, patch));
-                markOnline();
+                if (hasLiveThermalData(patch)) {
+                    markOnline();
+                } else {
+                    setLiveDataOnline(false);
+                }
                 scheduleRefresh(1000);
             } catch {
                 if (cancelled) return;
@@ -1398,6 +1437,45 @@ export const Application = () => {
             if (stallTimer !== undefined) {
                 window.clearTimeout(stallTimer);
             }
+            if (refreshTimer !== undefined) {
+                window.clearTimeout(refreshTimer);
+            }
+        };
+    }, []);
+
+    /*
+     * Optional fan and PWM telemetry updates independently from live temperatures.
+     */
+    useEffect(() => {
+        let cancelled = false;
+        let refreshTimer: number | undefined;
+
+        const scheduleRefresh = (delayMs: number) => {
+            refreshTimer = window.setTimeout(() => {
+                if (!cancelled) {
+                    refreshLoop().catch(() => undefined);
+                }
+            }, delayMs);
+        };
+
+        const refreshLoop = async (): Promise<void> => {
+            try {
+                const patch = await readFanPatch();
+                if (cancelled) return;
+
+                setMonitor(prev => mergeMonitorState(prev, patch));
+                scheduleRefresh(5000);
+            } catch {
+                if (cancelled) return;
+
+                scheduleRefresh(15000);
+            }
+        };
+
+        refreshLoop().catch(() => undefined);
+
+        return () => {
+            cancelled = true;
             if (refreshTimer !== undefined) {
                 window.clearTimeout(refreshTimer);
             }
@@ -1695,7 +1773,7 @@ export const Application = () => {
                             <FlexItem flex={{ default: "flex_1" }}>
                                 <Title headingLevel="h1">Raspberry Pi 4 Hardware Monitor</Title>
                                 <Content component={ContentVariants.p}>
-                                    Ver. 2.1 - May 7, 2026
+                                    Ver. 2.2 - May 7, 2026
                                 </Content>
                             </FlexItem>
 
