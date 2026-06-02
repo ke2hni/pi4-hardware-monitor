@@ -9,7 +9,7 @@ const APP_VERSION = "2.2";
 const VERSION_CHECK_URL = "https://raw.githubusercontent.com/ke2hni/pi4-hardware-monitor/main/version.txt";
 
 /*
- * Main Cockpit/React UI dependencies used by the Pi 4 Hardware Monitor page.
+ * Main Cockpit/React UI deependencies used by the Pi 4 Hardware Monitor page.
  */
 import { Card, CardBody } from "@patternfly/react-core/dist/esm/components/Card/index.js";
 import { Content, ContentVariants } from "@patternfly/react-core/dist/esm/components/Content/index.js";
