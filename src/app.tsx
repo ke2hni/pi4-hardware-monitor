@@ -78,13 +78,17 @@ type SdState = {
     mountedAt: string;
 };
 
-type UsbStorageState = {
-    present: string;
+type UsbStorageDeviceState = {
     model: string;
     capacity: string;
     freeSpace: string;
     devicePath: string;
     mountedAt: string;
+};
+
+type UsbStorageState = {
+    present: string;
+    devices: UsbStorageDeviceState[];
 };
 
 type VoltageState = {
@@ -1078,15 +1082,10 @@ async function readStoragePatch(): Promise<MonitorPatch> {
       ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null)
       echo "ROOT_DEVICE=$ROOT_DEV"
 
-      USB_STORAGE_DISK=""
-      USB_ROOT_DISK=""
-
+      ROOT_DISK=$(lsblk -ndo PKNAME "$ROOT_DEV" 2>/dev/null || true)
       case "$ROOT_DEV" in
-        /dev/sd[a-z][0-9]*)
-          USB_ROOT_DISK=$(printf '%s\\n' "$ROOT_DEV" | sed -E 's#^/dev/(sd[a-z]+)[0-9]+$#\\1#')
-          ;;
         /dev/sd[a-z])
-          USB_ROOT_DISK=$(printf '%s\\n' "$ROOT_DEV" | sed -E 's#^/dev/(sd[a-z]+)$#\\1#')
+          ROOT_DISK=$(basename "$ROOT_DEV")
           ;;
       esac
 
@@ -1097,47 +1096,53 @@ async function readStoragePatch(): Promise<MonitorPatch> {
 ' "$DISK_DEVICE_PATH" | grep -q '/usb'
       }
 
-      if [ -n "$USB_ROOT_DISK" ] && is_usb_storage_disk "$USB_ROOT_DISK"; then
-        USB_STORAGE_DISK="$USB_ROOT_DISK"
-      else
-        for DISK_PATH in /sys/class/block/sd*; do
-          [ -e "$DISK_PATH" ] || continue
-          DISK_NAME=$(basename "$DISK_PATH")
-          if is_usb_storage_disk "$DISK_NAME"; then
-            USB_STORAGE_DISK="$DISK_NAME"
-            break
-          fi
-        done
-      fi
+      USB_STORAGE_INDEX=0
 
-      if [ -n "$USB_STORAGE_DISK" ]; then
+      for DISK_PATH in /sys/class/block/sd*; do
+        [ -e "$DISK_PATH" ] || continue
+        DISK_NAME=$(basename "$DISK_PATH")
+
+        DISK_TYPE=$(lsblk -ndo TYPE "/dev/$DISK_NAME" 2>/dev/null || true)
+        [ "$DISK_TYPE" = "disk" ] || continue
+
+        [ -n "$ROOT_DISK" ] && [ "$DISK_NAME" = "$ROOT_DISK" ] && continue
+        is_usb_storage_disk "$DISK_NAME" || continue
+
         echo "USB_STORAGE_PRESENT=1"
-        echo "USB_STORAGE_DEVICE=/dev/$USB_STORAGE_DISK"
+        echo "USB\${USB_STORAGE_INDEX}_DEVICE=/dev/$DISK_NAME"
 
-        if [ -r "/sys/class/block/$USB_STORAGE_DISK/device/model" ]; then
-          USB_STORAGE_MODEL=$(cat "/sys/class/block/$USB_STORAGE_DISK/device/model" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        if [ -r "/sys/class/block/$DISK_NAME/device/model" ]; then
+          USB_STORAGE_MODEL=$(cat "/sys/class/block/$DISK_NAME/device/model" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        else
+          USB_STORAGE_MODEL=""
         fi
-        [ -n "$USB_STORAGE_MODEL" ] && echo "USB_STORAGE_MODEL=$USB_STORAGE_MODEL"
+        [ -n "$USB_STORAGE_MODEL" ] && echo "USB\${USB_STORAGE_INDEX}_MODEL=$USB_STORAGE_MODEL"
 
-        if [ -r "/sys/class/block/$USB_STORAGE_DISK/size" ]; then
-          USB_STORAGE_SIZE_BYTES=$(awk '{print $1 * 512}' "/sys/class/block/$USB_STORAGE_DISK/size" 2>/dev/null)
+        if [ -r "/sys/class/block/$DISK_NAME/size" ]; then
+          USB_STORAGE_SIZE_BYTES=$(awk '{print $1 * 512}' "/sys/class/block/$DISK_NAME/size" 2>/dev/null)
+        else
+          USB_STORAGE_SIZE_BYTES=""
         fi
-        [ -n "$USB_STORAGE_SIZE_BYTES" ] && echo "USB_STORAGE_SIZE_BYTES=$USB_STORAGE_SIZE_BYTES"
+        [ -n "$USB_STORAGE_SIZE_BYTES" ] && echo "USB\${USB_STORAGE_INDEX}_SIZE_BYTES=$USB_STORAGE_SIZE_BYTES"
 
-        USB_MOUNT_LINE=$(lsblk -nrpo NAME,MOUNTPOINT "/dev/$USB_STORAGE_DISK" 2>/dev/null | awk '$2 != "" {print $1 "|" $2; exit}')
+        USB_MOUNT_LINE=$(lsblk -nrpo NAME,MOUNTPOINT "/dev/$DISK_NAME" 2>/dev/null | awk '$2 != "" && $2 != "/boot" && $2 != "/boot/firmware" {print $1 "|" $2; exit}')
         if [ -n "$USB_MOUNT_LINE" ]; then
           USB_STORAGE_MOUNT_DEVICE=$(printf '%s
 ' "$USB_MOUNT_LINE" | cut -d'|' -f1)
           USB_STORAGE_MOUNT_POINT=$(printf '%s
 ' "$USB_MOUNT_LINE" | cut -d'|' -f2-)
-          [ -n "$USB_STORAGE_MOUNT_DEVICE" ] && echo "USB_STORAGE_MOUNT_DEVICE=$USB_STORAGE_MOUNT_DEVICE"
-          [ -n "$USB_STORAGE_MOUNT_POINT" ] && echo "USB_STORAGE_MOUNT_POINT=$USB_STORAGE_MOUNT_POINT"
+          [ -n "$USB_STORAGE_MOUNT_DEVICE" ] && echo "USB\${USB_STORAGE_INDEX}_MOUNT_DEVICE=$USB_STORAGE_MOUNT_DEVICE"
+          [ -n "$USB_STORAGE_MOUNT_POINT" ] && echo "USB\${USB_STORAGE_INDEX}_MOUNT_POINT=$USB_STORAGE_MOUNT_POINT"
           if [ -n "$USB_STORAGE_MOUNT_POINT" ]; then
             USB_STORAGE_FREE_BYTES=$(df -B1 "$USB_STORAGE_MOUNT_POINT" 2>/dev/null | awk 'NR==2 {print $4}')
-            [ -n "$USB_STORAGE_FREE_BYTES" ] && echo "USB_STORAGE_FREE_BYTES=$USB_STORAGE_FREE_BYTES"
+            [ -n "$USB_STORAGE_FREE_BYTES" ] && echo "USB\${USB_STORAGE_INDEX}_FREE_BYTES=$USB_STORAGE_FREE_BYTES"
           fi
         fi
-      fi
+
+        USB_STORAGE_INDEX=$((USB_STORAGE_INDEX + 1))
+      done
+
+      echo "USB_STORAGE_COUNT=$USB_STORAGE_INDEX"
 
       if [ -b /dev/mmcblk0 ]; then
         echo "SD_PRESENT=1"
@@ -1171,7 +1176,25 @@ async function readStoragePatch(): Promise<MonitorPatch> {
     const out = await cockpit.spawn(["sh", "-c", cmd], { err: "out" });
     const data = parseKeyValueOutput(out);
     const sdPresent = formatYesNoFromZeroOne(data.SD_PRESENT || "0");
-    const usbStoragePresent = formatYesNoFromZeroOne(data.USB_STORAGE_PRESENT || "0");
+    const usbStorageCount = Number(data.USB_STORAGE_COUNT || 0);
+    const usbStorageDevices: UsbStorageDeviceState[] = [];
+
+    if (Number.isFinite(usbStorageCount) && usbStorageCount > 0) {
+        for (let index = 0; index < usbStorageCount; index += 1) {
+            const prefix = `USB${index}_`;
+            const mountPoint = data[`${prefix}MOUNT_POINT`];
+
+            usbStorageDevices.push({
+                model: displayStorageHardwareField(data[`${prefix}MODEL`], "Yes"),
+                capacity: displayStorageHardwareField(formatBytesDecimal(data[`${prefix}SIZE_BYTES`] || ""), "Yes"),
+                freeSpace: displayStorageFsField(formatBytesDecimal(data[`${prefix}FREE_BYTES`] || ""), mountPoint, "Yes"),
+                devicePath: displayStorageHardwareField(data[`${prefix}DEVICE`], "Yes"),
+                mountedAt: displayStorageMount(mountPoint, "Yes"),
+            });
+        }
+    }
+
+    const usbStoragePresent = usbStorageDevices.length > 0 ? "Yes" : "No";
 
     return {
         boot: {
@@ -1190,11 +1213,7 @@ async function readStoragePatch(): Promise<MonitorPatch> {
         },
         usbStorage: {
             present: usbStoragePresent,
-            model: displayStorageHardwareField(data.USB_STORAGE_MODEL, usbStoragePresent),
-            capacity: displayStorageHardwareField(formatBytesDecimal(data.USB_STORAGE_SIZE_BYTES || ""), usbStoragePresent),
-            freeSpace: displayStorageFsField(formatBytesDecimal(data.USB_STORAGE_FREE_BYTES || ""), data.USB_STORAGE_MOUNT_POINT, usbStoragePresent),
-            devicePath: displayStorageHardwareField(data.USB_STORAGE_DEVICE, usbStoragePresent),
-            mountedAt: displayStorageMount(data.USB_STORAGE_MOUNT_POINT, usbStoragePresent),
+            devices: usbStorageDevices,
         },
     };
 }
@@ -1281,11 +1300,7 @@ function defaultMonitorState(): MonitorState {
         },
         usbStorage: {
             present: "--",
-            model: "--",
-            capacity: "--",
-            freeSpace: "--",
-            devicePath: "--",
-            mountedAt: "--",
+            devices: [],
         },
         voltages: {
             coreVoltage: "--",
@@ -1750,7 +1765,7 @@ export const Application = () => {
     const showFanCard =
         !["--", "0"].includes(monitor.thermal.fanRpm) ||
         !["--", "0%"].includes(monitor.thermal.fanPwm);
-    const showUsbStorageSection = monitor.usbStorage.present === "Yes";
+    const showUsbStorageSection = monitor.usbStorage.present === "Yes" && monitor.usbStorage.devices.length > 0;
     const selectedHistoryDay = historyDays.find(day => day.dayKey === selectedHistoryDayKey) || null;
     const selectedDaySamples = historySamples.filter(sample => sample.dayKey === selectedHistoryDayKey);
     const selectedHistorySample =
@@ -2413,41 +2428,48 @@ export const Application = () => {
                                 <Content>
                                     <Title headingLevel="h2">External USB Storage</Title>
                                     <Content component={ContentVariants.small}>
-                                        When drive is detected, certain data only appears when mounted.
+                                        Boot/root USB disks are excluded. Each additional USB storage device is shown separately. Certain data only appears when mounted.
                                     </Content>
                                 </Content>
-                                <Gallery hasGutter minWidths={{ default: "220px" }}>
-                                    <Card isCompact>
-                                        <CardBody>
-                                            <Title headingLevel="h4" size="md" className="pi-card-label">Model</Title>
-                                            <Title headingLevel="h3">{monitor.usbStorage.model}</Title>
-                                        </CardBody>
-                                    </Card>
-                                    <Card isCompact>
-                                        <CardBody>
-                                            <Title headingLevel="h4" size="md" className="pi-card-label">Capacity</Title>
-                                            <Title headingLevel="h3">{monitor.usbStorage.capacity}</Title>
-                                        </CardBody>
-                                    </Card>
-                                    <Card isCompact>
-                                        <CardBody>
-                                            <Title headingLevel="h4" size="md" className="pi-card-label">Free Space</Title>
-                                            <Title headingLevel="h3">{monitor.usbStorage.freeSpace}</Title>
-                                        </CardBody>
-                                    </Card>
-                                    <Card isCompact>
-                                        <CardBody>
-                                            <Title headingLevel="h4" size="md" className="pi-card-label">Device Path</Title>
-                                            <Title headingLevel="h3">{monitor.usbStorage.devicePath}</Title>
-                                        </CardBody>
-                                    </Card>
-                                    <Card isCompact>
-                                        <CardBody>
-                                            <Title headingLevel="h4" size="md" className="pi-card-label">Mounted At</Title>
-                                            <Title headingLevel="h3">{monitor.usbStorage.mountedAt}</Title>
-                                        </CardBody>
-                                    </Card>
-                                </Gallery>
+                                {monitor.usbStorage.devices.map((usbDevice, index) => (
+                                    <React.Fragment key={usbDevice.devicePath}>
+                                        <Content>
+                                            <Title headingLevel="h3">External USB Storage #{index + 1}</Title>
+                                        </Content>
+                                        <Gallery hasGutter minWidths={{ default: "220px" }}>
+                                            <Card isCompact>
+                                                <CardBody>
+                                                    <Title headingLevel="h4" size="md" className="pi-card-label">Model</Title>
+                                                    <Title headingLevel="h3">{usbDevice.model}</Title>
+                                                </CardBody>
+                                            </Card>
+                                            <Card isCompact>
+                                                <CardBody>
+                                                    <Title headingLevel="h4" size="md" className="pi-card-label">Capacity</Title>
+                                                    <Title headingLevel="h3">{usbDevice.capacity}</Title>
+                                                </CardBody>
+                                            </Card>
+                                            <Card isCompact>
+                                                <CardBody>
+                                                    <Title headingLevel="h4" size="md" className="pi-card-label">Free Space</Title>
+                                                    <Title headingLevel="h3">{usbDevice.freeSpace}</Title>
+                                                </CardBody>
+                                            </Card>
+                                            <Card isCompact>
+                                                <CardBody>
+                                                    <Title headingLevel="h4" size="md" className="pi-card-label">Device Path</Title>
+                                                    <Title headingLevel="h3">{usbDevice.devicePath}</Title>
+                                                </CardBody>
+                                            </Card>
+                                            <Card isCompact>
+                                                <CardBody>
+                                                    <Title headingLevel="h4" size="md" className="pi-card-label">Mounted At</Title>
+                                                    <Title headingLevel="h3">{usbDevice.mountedAt}</Title>
+                                                </CardBody>
+                                            </Card>
+                                        </Gallery>
+                                    </React.Fragment>
+                                ))}
                             </>
                         )}
 
