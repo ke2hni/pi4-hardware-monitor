@@ -87,8 +87,18 @@ sudo ./uninstall.sh
 
 ---
 
-## 📸 Screenshots
+## 📸 Screenshots (Right after install with no history data also no PWM Fan Present)
 
-(Add screenshots here once captured from Pi 4)
+<img width="1600" height="900" alt="Screenshot 2026-06-01 230646" src="https://github.com/user-attachments/assets/1a818f7b-cbfb-4a81-8a4e-d2e4dd5a181d" />
+<img width="1600" height="900" alt="Screenshot 2026-06-01 230700" src="https://github.com/user-attachments/assets/82262bb4-b28a-4b07-b942-085b795aabd4" />
+<img width="1600" height="900" alt="Screenshot 2026-06-01 230707" src="https://github.com/user-attachments/assets/d5f28b5b-4b29-4fca-af62-b9919620569c" />
+<img width="1600" height="900" alt="Screenshot 2026-06-01 230712" src="https://github.com/user-attachments/assets/6857aaf0-75d1-4e71-b37e-3cb9d6b56000" />
 
 ---
+
+## 📸 Screenshots (After history data had been collected & a PWN Fan installed)
+
+<img width="1600" height="900" alt="Screenshot 2026-06-01 231422" src="https://github.com/user-attachments/assets/e666a4cb-7c55-4a87-ab01-6daf9b221392" />
+<img width="1600" height="900" alt="Screenshot 2026-06-01 231431" src="https://github.com/user-attachments/assets/2beef88e-4102-409d-af56-71103fd0d37f" />
+<img width="1600" height="900" alt="Screenshot 2026-06-01 231439" src="https://github.com/user-attachments/assets/cd79c98e-0082-4a50-b6ed-72d0623cdf56" />
+<img width="1600" height="900" alt="Screenshot 2026-06-01 231447" src="https://github.com/user-attachments/assets/48681fbf-0b87-4ece-9959-b08e6633c50b" />
