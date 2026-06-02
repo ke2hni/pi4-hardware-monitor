@@ -1105,7 +1105,6 @@ async function readStoragePatch(): Promise<MonitorPatch> {
         DISK_TYPE=$(lsblk -ndo TYPE "/dev/$DISK_NAME" 2>/dev/null || true)
         [ "$DISK_TYPE" = "disk" ] || continue
 
-        [ -n "$ROOT_DISK" ] && [ "$DISK_NAME" = "$ROOT_DISK" ] && continue
         is_usb_storage_disk "$DISK_NAME" || continue
 
         echo "USB_STORAGE_PRESENT=1"
@@ -1788,7 +1787,7 @@ export const Application = () => {
                             <FlexItem flex={{ default: "flex_1" }}>
                                 <Title headingLevel="h1">Raspberry Pi 4 Hardware Monitor</Title>
                                 <Content component={ContentVariants.p}>
-                                    Ver. 2.5 - June 2, 2026
+                                    Ver. 2.2 - May 7, 2026
                                 </Content>
                             </FlexItem>
 
@@ -2428,7 +2427,7 @@ export const Application = () => {
                                 <Content>
                                     <Title headingLevel="h2">External USB Storage</Title>
                                     <Content component={ContentVariants.small}>
-                                        Boot/root USB disks are excluded. Each additional USB storage device is shown separately. Certain data only appears when mounted.
+                                        Boot/firmware partitions are skipped. Each USB storage device is shown separately, using the first mounted data/root partition found. Certain data only appears when mounted.
                                     </Content>
                                 </Content>
                                 {monitor.usbStorage.devices.map((usbDevice, index) => (
