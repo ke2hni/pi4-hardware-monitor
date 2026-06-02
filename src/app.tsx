@@ -5,6 +5,9 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 
+const APP_VERSION = "2.2";
+const VERSION_CHECK_URL = "https://raw.githubusercontent.com/ke2hni/pi4-hardware-monitor/main/version.txt";
+
 /*
  * Main Cockpit/React UI dependencies used by the Pi 4 Hardware Monitor page.
  */
@@ -1787,7 +1790,7 @@ export const Application = () => {
                             <FlexItem flex={{ default: "flex_1" }}>
                                 <Title headingLevel="h1">Raspberry Pi 4 Hardware Monitor</Title>
                                 <Content component={ContentVariants.p}>
-                                    Ver. 2.5 - June 2, 2026
+                                    Ver. 2.2 - May 7, 2026
                                 </Content>
                             </FlexItem>
 
@@ -2574,3 +2577,16 @@ export const Application = () => {
         </Page>
     );
 };
+
+
+async function checkGithubVersion() {
+    try {
+        const response = await fetch(VERSION_CHECK_URL, { cache: "no-store" });
+        if (!response.ok) throw new Error("Version check failed");
+        const latest = (await response.text()).trim();
+        setGithubLatestVersion(latest);
+        setGithubVersionStatus(latest === APP_VERSION ? "Up to date" : `Update available (${latest})`);
+    } catch {
+        setGithubVersionStatus("Unable to check");
+    }
+}
