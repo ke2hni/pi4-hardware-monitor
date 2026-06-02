@@ -1342,6 +1342,8 @@ async function readMonitorData(): Promise<MonitorState> {
  * Handles live refresh loops, persisted UI state, history selection, and page render.
  */
 export const Application = () => {
+    const [githubVersionStatus, setGithubVersionStatus] = useState("Checking...");
+    const [githubLatestVersion, setGithubLatestVersion] = useState("--");
     const [liveDataOnline, setLiveDataOnline] = useState(false);
     const [monitor, setMonitor] = useState<MonitorState>(defaultMonitorState());
     const [historyDays, setHistoryDays] = useState<HistoryDaySummary[]>([]);
@@ -1365,6 +1367,40 @@ export const Application = () => {
                 return DEFAULT_VISIBLE_SECTIONS;
             }
         });
+
+    /*
+     * Check GitHub version file once when the page loads.
+     */
+    useEffect(() => {
+        let cancelled = false;
+
+        const checkGithubVersion = async () => {
+            try {
+                const response = await fetch(VERSION_CHECK_URL, { cache: "no-store" });
+
+                if (!response.ok) {
+                    throw new Error("Version check failed");
+                }
+
+                const latest = (await response.text()).trim();
+
+                if (cancelled) return;
+
+                setGithubLatestVersion(latest || "--");
+                setGithubVersionStatus(latest === APP_VERSION ? "Up to date" : `Update available (${latest})`);
+            } catch {
+                if (!cancelled) {
+                    setGithubVersionStatus("Unable to check");
+                }
+            }
+        };
+
+        checkGithubVersion().catch(() => undefined);
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     /*
      * Initial full snapshot so the page fills quickly before the staggered loops take over.
@@ -1790,7 +1826,15 @@ export const Application = () => {
                             <FlexItem flex={{ default: "flex_1" }}>
                                 <Title headingLevel="h1">Raspberry Pi 4 Hardware Monitor</Title>
                                 <Content component={ContentVariants.p}>
-                                    Ver. 2.2 - May 7, 2026
+                                    Ver. {APP_VERSION} - May 7, 2026
+                                    <br />
+                                    GitHub: {githubVersionStatus}
+                                    {githubLatestVersion !== "--" && (
+                                        <>
+                                            <br />
+                                            Latest Version: {githubLatestVersion}
+                                        </>
+                                    )}
                                 </Content>
                             </FlexItem>
 
@@ -2577,16 +2621,3 @@ export const Application = () => {
         </Page>
     );
 };
-
-
-async function checkGithubVersion() {
-    try {
-        const response = await fetch(VERSION_CHECK_URL, { cache: "no-store" });
-        if (!response.ok) throw new Error("Version check failed");
-        const latest = (await response.text()).trim();
-        setGithubLatestVersion(latest);
-        setGithubVersionStatus(latest === APP_VERSION ? "Up to date" : `Update available (${latest})`);
-    } catch {
-        setGithubVersionStatus("Unable to check");
-    }
-}
