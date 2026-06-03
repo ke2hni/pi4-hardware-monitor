@@ -5,9 +5,6 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 
-const APP_VERSION = "2.5";
-const VERSION_CHECK_URL = "https://raw.githubusercontent.com/ke2hni/pi4-hardware-monitor/main/version.txt";
-
 /*
  * Main Cockpit/React UI dependencies used by the Pi 4 Hardware Monitor page.
  */
@@ -19,6 +16,9 @@ import { Select, SelectList, SelectOption } from "@patternfly/react-core/dist/es
 import { Title } from "@patternfly/react-core/dist/esm/components/Title/index.js";
 import { Flex, FlexItem } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
 import { Gallery } from "@patternfly/react-core/dist/esm/layouts/Gallery/index.js";
+
+const APP_VERSION = "2.5";
+const VERSION_CHECK_URL = "https://raw.githubusercontent.com/ke2hni/pi4-hardware-monitor/main/version.txt";
 
 /*
  * Cockpit bridge interface used to run local node commands and read live data.
@@ -1852,10 +1852,7 @@ export const Application = () => {
                             </FlexItem>
 
                             <FlexItem>
-                                <Card
-                                    isCompact
-                                    className={`pi-live-data-card ${liveDataOnline ? "pi-live-data-card-online" : "pi-live-data-card-offline"}`}
-                                >
+                                <Card isCompact className={`pi-live-data-card ${liveDataOnline ? "pi-live-data-card-online" : "pi-live-data-card-offline"}`}>
                                     <CardBody>
                                         <Title headingLevel="h3">
                                             <span>Live Sensor Data</span>
