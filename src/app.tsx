@@ -1846,7 +1846,7 @@ export const Application = () => {
                                 <Content component={ContentVariants.p} style={{ marginBottom: "1rem" }}>
                                     Ver. {APP_VERSION} - June 2, 2026
                                     <br />
-                                    GitHub: {githubVersionStatus}
+                                    GitHub Ver.: {githubVersionStatus}
                                 </Content>
                             </FlexItem>
 
