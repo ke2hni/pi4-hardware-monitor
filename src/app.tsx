@@ -1843,11 +1843,10 @@ export const Application = () => {
                         >
                             <FlexItem flex={{ default: "flex_1" }}>
                                 <Title headingLevel="h1">Raspberry Pi 4 Hardware Monitor</Title>
-                                <Content component={ContentVariants.p}>
+                                <Content component={ContentVariants.p} style={{ marginBottom: "1rem" }}>
                                     Ver. {APP_VERSION} - June 2, 2026
                                     <br />
                                     GitHub: {githubVersionStatus}
-                                    <br />
                                 </Content>
                             </FlexItem>
 
