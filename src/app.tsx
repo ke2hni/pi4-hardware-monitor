@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 
-const APP_VERSION = "2.2";
+const APP_VERSION = "2.5";
 const VERSION_CHECK_URL = "https://raw.githubusercontent.com/ke2hni/pi4-hardware-monitor/main/version.txt";
 
 /*
@@ -1844,9 +1844,10 @@ export const Application = () => {
                             <FlexItem flex={{ default: "flex_1" }}>
                                 <Title headingLevel="h1">Raspberry Pi 4 Hardware Monitor</Title>
                                 <Content component={ContentVariants.p}>
-                                    Ver. {APP_VERSION} - May 7, 2026
+                                    Ver. {APP_VERSION} - June 2, 2026
                                     <br />
                                     GitHub: {githubVersionStatus}
+                                    <br />
                                 </Content>
                             </FlexItem>
 
