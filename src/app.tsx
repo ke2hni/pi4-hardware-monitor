@@ -9,7 +9,7 @@ const APP_VERSION = "2.2";
 const VERSION_CHECK_URL = "https://raw.githubusercontent.com/ke2hni/pi4-hardware-monitor/main/version.txt";
 
 /*
- * Main Cockpit/React UI deependencies used by the Pi 4 Hardware Monitor page.
+ * Main Cockpit/React UI dependencies used by the Pi 4 Hardware Monitor page.
  */
 import { Card, CardBody } from "@patternfly/react-core/dist/esm/components/Card/index.js";
 import { Content, ContentVariants } from "@patternfly/react-core/dist/esm/components/Content/index.js";
@@ -1343,7 +1343,6 @@ async function readMonitorData(): Promise<MonitorState> {
  */
 export const Application = () => {
     const [githubVersionStatus, setGithubVersionStatus] = useState("Checking...");
-    const [githubLatestVersion, setGithubLatestVersion] = useState("--");
     const [liveDataOnline, setLiveDataOnline] = useState(false);
     const [monitor, setMonitor] = useState<MonitorState>(defaultMonitorState());
     const [historyDays, setHistoryDays] = useState<HistoryDaySummary[]>([]);
@@ -1370,24 +1369,43 @@ export const Application = () => {
 
     /*
      * Check GitHub version file once when the page loads.
+     * Uses cockpit.spawn so the Pi checks GitHub locally instead of relying on browser fetch.
      */
     useEffect(() => {
         let cancelled = false;
 
         const checkGithubVersion = async () => {
             try {
-                const response = await fetch(VERSION_CHECK_URL, { cache: "no-store" });
-
-                if (!response.ok) {
-                    throw new Error("Version check failed");
-                }
-
-                const latest = (await response.text()).trim();
+                const latest = (await cockpit.spawn(
+                    [
+                        "sh",
+                        "-c",
+                        `
+                          URL="${VERSION_CHECK_URL}"
+                          if command -v curl >/dev/null 2>&1; then
+                            curl -fsSL --connect-timeout 8 "$URL" 2>/dev/null
+                          elif command -v wget >/dev/null 2>&1; then
+                            wget -qO- "$URL" 2>/dev/null
+                          else
+                            exit 127
+                          fi
+                        `
+                    ],
+                    { err: "out" }
+                ))
+                        .split("\n")[0]
+                        .trim();
 
                 if (cancelled) return;
 
-                setGithubLatestVersion(latest || "--");
-                setGithubVersionStatus(latest === APP_VERSION ? "Up to date" : `Update available (${latest})`);
+                if (!latest) {
+                    setGithubVersionStatus("Unable to check");
+                    return;
+                }
+
+                setGithubVersionStatus(
+                    latest === APP_VERSION ? "Up to date" : `Update available (${latest})`
+                );
             } catch {
                 if (!cancelled) {
                     setGithubVersionStatus("Unable to check");
@@ -1829,12 +1847,6 @@ export const Application = () => {
                                     Ver. {APP_VERSION} - May 7, 2026
                                     <br />
                                     GitHub: {githubVersionStatus}
-                                    {githubLatestVersion !== "--" && (
-                                        <>
-                                            <br />
-                                            Latest Version: {githubLatestVersion}
-                                        </>
-                                    )}
                                 </Content>
                             </FlexItem>
 
